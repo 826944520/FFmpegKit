@@ -1,11 +1,18 @@
 // swift-tools-version:5.9
 import PackageDescription
 
+// iOS-only: macOS/tvOS/visionOS/macCatalyst were dropped (see plan). The FFmpegKit
+// target is a pure linker aggregator (Sources/FFmpegKit/FFmpegKit.c is empty), so the
+// binary-target dependency list below is the authoritative set of libraries linked into
+// the final FFmpegKit framework. The GPU stack (MoltenVK/libshaderc/libplacebo/libmpv)
+// and transport/feature libs (libsrt/libsmbclient/libzvbi/libfontconfig/libbluray/lcms2)
+// were removed because KSPlayer does not use them — keeping them would mean linking
+// binaries built against FFmpeg 6.1 alongside the rebuilt 8.x Libav* (libmpv wraps the
+// FFmpeg API and would conflict), so they are dropped rather than rebuilt.
 let package = Package(
     name: "FFmpegKit",
     defaultLocalization: "en",
-    platforms: [.macOS(.v10_15), .macCatalyst(.v14), .iOS(.v13), .tvOS(.v13),
-                .visionOS(.v1)],
+    platforms: [.iOS(.v13)],
     products: [
         .library(
             name: "FFmpegKit",
@@ -25,10 +32,6 @@ let package = Package(
         .library(name: "hogweed", targets: ["hogweed"]),
         .library(name: "gnutls", targets: ["gnutls"]),
         .library(name: "libass", targets: ["libfreetype", "libfribidi", "libharfbuzz", "libass"]),
-        .library(name: "libmpv", targets: ["FFmpegKit", "libass", "libmpv"]),
-        .executable(name: "ffmpeg", targets: ["ffmpeg"]),
-        .executable(name: "ffplay", targets: ["ffplay"]),
-        .executable(name: "ffprobe", targets: ["ffprobe"]),
         .plugin(name: "BuildFFmpeg", targets: ["BuildFFmpeg"]),
     ],
     dependencies: [
@@ -38,18 +41,9 @@ let package = Package(
         .target(
             name: "FFmpegKit",
             dependencies: [
-                "MoltenVK",
-                "libshaderc_combined",
-                "lcms2",
                 "libdav1d",
-                "libplacebo",
-                .target(name: "libzvbi", condition: .when(platforms: [.macOS, .iOS, .tvOS, .visionOS])),
-                "libsrt",
                 "libfreetype", "libfribidi", "libharfbuzz", "libass",
-                "libfontconfig",
-                .target(name: "libbluray", condition: .when(platforms: [.macOS])),
                 "gmp", "nettle", "hogweed", "gnutls",
-                "libsmbclient",
                 "Libavcodec", "Libavdevice", "Libavfilter", "Libavformat", "Libavutil", "Libswresample", "Libswscale",
             ],
             linkerSettings: [
@@ -61,55 +55,20 @@ let package = Package(
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("CoreMedia"),
-                .linkedFramework("Cocoa", .when(platforms: [.macOS])),
-                .linkedFramework("DiskArbitration", .when(platforms: [.macOS])),
                 .linkedFramework("Foundation"),
                 .linkedFramework("Metal"),
-                .linkedFramework("IOKit", .when(platforms: [.macOS, .iOS, .visionOS, .macCatalyst])),
+                .linkedFramework("IOKit"),
                 .linkedFramework("IOSurface"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("Security"),
-                .linkedFramework("UIKit", .when(platforms: [.iOS, .tvOS, .visionOS, .macCatalyst])),
+                .linkedFramework("UIKit"),
                 .linkedFramework("VideoToolbox"),
                 .linkedLibrary("bz2"),
                 .linkedLibrary("c++"),
-                .linkedLibrary("expat", .when(platforms: [.macOS])),
                 .linkedLibrary("iconv"),
                 .linkedLibrary("resolv"),
                 .linkedLibrary("xml2"),
                 .linkedLibrary("z"),
-            ]
-        ),
-        .executableTarget(
-            name: "ffplay",
-            dependencies: [
-                "fftools",
-                "SDL2",
-            ]
-        ),
-        .executableTarget(
-            name: "ffprobe",
-            dependencies: [
-                "fftools",
-            ]
-        ),
-        .executableTarget(
-            name: "ffmpeg",
-            dependencies: [
-                "fftools",
-            ]
-        ),
-        .target(
-            name: "fftools",
-            dependencies: [
-                "FFmpegKit",
-            ]
-        ),
-        .systemLibrary(
-            name: "SDL2",
-            pkgConfig: "sdl2",
-            providers: [
-                .brew(["sdl2"]),
             ]
         ),
 //        .target(
@@ -131,23 +90,6 @@ let package = Package(
 //                    .allowNetworkConnections(scope: .all(), reason: "The plugin must connect to a remote server to brew install nasm sdl2 cmake"),
                 ]
             )
-        ),
-        .binaryTarget(
-            name: "MoltenVK",
-            path: "Sources/MoltenVK.xcframework"
-        ),
-        .binaryTarget(
-            name: "libshaderc_combined",
-            path: "Sources/libshaderc_combined.xcframework"
-        ),
-
-        .binaryTarget(
-            name: "lcms2",
-            path: "Sources/lcms2.xcframework"
-        ),
-        .binaryTarget(
-            name: "libplacebo",
-            path: "Sources/libplacebo.xcframework"
         ),
         .binaryTarget(
             name: "libdav1d",
@@ -182,14 +124,6 @@ let package = Package(
             path: "Sources/Libswscale.xcframework"
         ),
         .binaryTarget(
-            name: "libsrt",
-            path: "Sources/libsrt.xcframework"
-        ),
-        .binaryTarget(
-            name: "libzvbi",
-            path: "Sources/libzvbi.xcframework"
-        ),
-        .binaryTarget(
             name: "libfreetype",
             path: "Sources/libfreetype.xcframework"
         ),
@@ -206,10 +140,6 @@ let package = Package(
             path: "Sources/libass.xcframework"
         ),
         .binaryTarget(
-            name: "libmpv",
-            path: "Sources/libmpv.xcframework"
-        ),
-        .binaryTarget(
             name: "gmp",
             path: "Sources/gmp.xcframework"
         ),
@@ -222,20 +152,8 @@ let package = Package(
             path: "Sources/hogweed.xcframework"
         ),
         .binaryTarget(
-            name: "libfontconfig",
-            path: "Sources/libfontconfig.xcframework"
-        ),
-        .binaryTarget(
-            name: "libbluray",
-            path: "Sources/libbluray.xcframework"
-        ),
-        .binaryTarget(
             name: "gnutls",
             path: "Sources/gnutls.xcframework"
-        ),
-        .binaryTarget(
-            name: "libsmbclient",
-            path: "Sources/libsmbclient.xcframework"
         ),
 //        .binaryTarget(
 //            name: "libssl",
