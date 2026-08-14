@@ -198,6 +198,19 @@ class BuildGnutls: BaseBuild {
     }
 
     override func configure(buildURL: URL, environ: [String: String], platform: PlatformType, arch: ArchType) throws {
+        // gnutls' bootstrap (run by BaseBuild.configure when `configure` is absent)
+        // downloads .po translations from translationproject.org via wget. That
+        // site's robots.txt returns 404, which wget treats as fatal, aborting
+        // bootstrap. Run bootstrap ourselves with --skip-po once (guarded by the
+        // generated `configure` file) so the translation download is bypassed and
+        // BaseBuild.configure finds `configure` already present.
+        let configureFile = directoryURL + "configure"
+        if !FileManager.default.fileExists(atPath: configureFile.path) {
+            let bootstrap = directoryURL + "bootstrap"
+            if FileManager.default.fileExists(atPath: bootstrap.path) {
+                try Utility.launch(executableURL: bootstrap, arguments: ["--skip-po"], currentDirectoryURL: directoryURL, environment: environ)
+            }
+        }
         try super.configure(buildURL: buildURL, environ: environ, platform: platform, arch: arch)
         let path = directoryURL + "lib/accelerated/aarch64/Makefile.in"
         if let data = FileManager.default.contents(atPath: path.path), var str = String(data: data, encoding: .utf8) {
