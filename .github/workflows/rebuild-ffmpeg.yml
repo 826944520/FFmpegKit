@@ -17,14 +17,23 @@ permissions:
 jobs:
   rebuild:
     name: Rebuild FFmpeg n8.1 xcframeworks (ios + isimulator)
-    runs-on: macos-latest
+    # macos-14 + Xcode 15.x: the dependency stack (gmp/nettle/gnutls/libass) is old
+    # autotools code that breaks against the very new SDKs shipped with macos-latest
+    # (Xcode 26 / iPhoneOS 26). macos-14 ships Xcode 15.x, which is the environment
+    # the original fork's build.yml was validated against.
+    runs-on: macos-14
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Xcode
+      - name: Set up Xcode (prefer 15.x)
         run: |
-          XCODE_APP=$(ls /Applications | grep '^Xcode_.*\.app$' | sort -V | tail -1)
+          # Prefer the newest 15.x; fall back to newest available if none.
+          XCODE_APP=$(ls /Applications | grep '^Xcode_15.*\.app$' | sort -V | tail -1)
+          if [ -z "$XCODE_APP" ]; then
+            XCODE_APP=$(ls /Applications | grep '^Xcode_.*\.app$' | sort -V | tail -1)
+          fi
+          echo "Selected: $XCODE_APP"
           if [ -n "$XCODE_APP" ]; then
             sudo xcode-select -s "/Applications/$XCODE_APP/Contents/Developer"
           fi
