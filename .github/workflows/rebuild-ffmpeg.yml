@@ -26,17 +26,32 @@ jobs:
       - name: Build patched FFmpeg (ios + isimulator)
         run: |
           set -e
-          echo "::group::BuildFFmpeg"
           swift --version
           swift package --disable-sandbox BuildFFmpeg platforms=ios,isimulator enable-FFmpeg 2>&1 | tail -80
-          echo "::endgroup::"
 
-      - name: Verify patched binary (avpriv_tempfile honors TMPDIR)
+      - name: Verify patch landed in source + binary
         run: |
           set -e
-          VM=$(find Sources/Libavutil.xcframework -name version_major.h -path '*ios-arm64*' | head -1)
-          echo "libavutil version_major.h: $VM"
-          grep -E '^#define LIBAVUTIL_VERSION_MAJOR' "$VM" || true
+          SRC=$(find .Script -path '*FFmpeg-n6.1/libavutil/file_open.c' | head -1)
+          echo "source: $SRC"
+          grep -q 'getenv("TMPDIR")' "$SRC" || { echo "::error::patch NOT applied to FFmpeg source"; exit 1; }
+          echo "source patch ✓"
+          BIN=$(find .Script/FFmpeg/ios -name Libavutil | head -1)
+          echo "binary: $BIN"
+          if ! strings "$BIN" | grep -q TMPDIR; then
+            echo "::error::TMPDIR not found in rebuilt Libavutil binary"
+            exit 1
+          fi
+          echo "binary patch ✓"
+
+      - name: Gate headers still present (avcodec/avformat/avfilter)
+        run: |
+          set -e
+          for lib in Libavcodec Libavformat Libavfilter; do
+            VM=$(find Sources/$lib.xcframework -name version_major.h -path '*ios-arm64*' | head -1)
+            test -n "$VM" || { echo "::error::$lib version_major.h missing in ios-arm64"; exit 1; }
+            echo "$lib: $(grep -E '^#define LIBAV.*VERSION_MAJOR' "$VM" | tr '\n' ' ')"
+          done
 
       - name: Commit rebuilt xcframeworks
         run: |

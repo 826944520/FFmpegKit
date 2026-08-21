@@ -1,7 +1,9 @@
 diff --git a/libavutil/file_open.c b/libavutil/file_open.c
+index 9aa4e4a..110e79e 100644
 --- a/libavutil/file_open.c
 +++ b/libavutil/file_open.c
-@@ -53,8 +53,9 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+@@ -120,7 +120,8 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+ #undef free
      free(ptr);
  #else
 -    size_t len = strlen(prefix) + 12; /* room for "/tmp/" and "XXXXXX\0" */
@@ -9,7 +11,9 @@ diff --git a/libavutil/file_open.c b/libavutil/file_open.c
 +    size_t len = strlen(prefix) + (tmpdir ? strlen(tmpdir) : 5) + 16; /* room for "<dir>/" and "XXXXXX\0" */
      *filename  = av_malloc(len);
  #endif
-@@ -70,9 +71,16 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+     /* -----common section-----*/
+@@ -137,9 +138,13 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+ #   endif
      fd = open(*filename, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
  #else
 -    snprintf(*filename, len, "/tmp/%sXXXXXX", prefix);
