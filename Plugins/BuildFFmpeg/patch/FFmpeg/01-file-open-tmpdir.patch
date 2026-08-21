@@ -1,0 +1,26 @@
+diff --git a/libavutil/file_open.c b/libavutil/file_open.c
+--- a/libavutil/file_open.c
++++ b/libavutil/file_open.c
+@@ -53,8 +53,9 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+     free(ptr);
+ #else
+-    size_t len = strlen(prefix) + 12; /* room for "/tmp/" and "XXXXXX\0" */
++    const char *tmpdir = getenv("TMPDIR");
++    size_t len = strlen(prefix) + (tmpdir ? strlen(tmpdir) : 5) + 16; /* room for "<dir>/" and "XXXXXX\0" */
+     *filename  = av_malloc(len);
+ #endif
+@@ -70,9 +71,16 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
+     fd = open(*filename, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
+ #else
+-    snprintf(*filename, len, "/tmp/%sXXXXXX", prefix);
++    if (tmpdir) {
++        snprintf(*filename, len, "%s/%sXXXXXX", tmpdir, prefix);
++    } else {
++        snprintf(*filename, len, "/tmp/%sXXXXXX", prefix);
++    }
+     fd = mkstemp(*filename);
+-#if defined(_WIN32) || defined (__ANDROID__) || defined(__DJGPP__)
++#if defined(_WIN32) || defined (__ANDROID__) || defined(__DJGPP__) || defined(__APPLE__)
+     if (fd < 0) {
+         snprintf(*filename, len, "./%sXXXXXX", prefix);
+         fd = mkstemp(*filename);

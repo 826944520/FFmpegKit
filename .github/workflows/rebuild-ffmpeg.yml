@@ -1,0 +1,48 @@
+name: rebuild-ffmpeg-ios
+
+# Rebuilds the Libav* (+ gmp/nettle/gnutls/smbclient) xcframeworks with the
+# TMPDIR-aware avpriv_tempfile patch (Plugins/BuildFFmpeg/patch/FFmpeg/),
+# fixing the FFmpeg `cache:` protocol on iOS (avpriv_tempfile hardcodes /tmp,
+# which is not writable in the sandbox). Only iOS + iOS-simulator are built;
+# every other committed xcframework stays untouched.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ksplayer-tmpdir-fix
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build patched FFmpeg (ios + isimulator)
+        run: |
+          set -e
+          echo "::group::BuildFFmpeg"
+          swift --version
+          swift package --disable-sandbox BuildFFmpeg platforms=ios,isimulator enable-FFmpeg 2>&1 | tail -80
+          echo "::endgroup::"
+
+      - name: Verify patched binary (avpriv_tempfile honors TMPDIR)
+        run: |
+          set -e
+          VM=$(find Sources/Libavutil.xcframework -name version_major.h -path '*ios-arm64*' | head -1)
+          echo "libavutil version_major.h: $VM"
+          grep -E '^#define LIBAVUTIL_VERSION_MAJOR' "$VM" || true
+
+      - name: Commit rebuilt xcframeworks
+        run: |
+          git config user.name "KSPlayer Bot"
+          git config user.email "826944520@qq.com"
+          git add -A Sources
+          git status --short | head -30
+          git commit -m "Rebuild Libav*/gmp/nettle/gnutls/smbclient xcframeworks with TMPDIR-aware avpriv_tempfile (iOS cache: protocol fix)" || echo "no changes to commit"
+          git push origin ksplayer-tmpdir-fix
