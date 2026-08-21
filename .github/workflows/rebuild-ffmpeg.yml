@@ -23,11 +23,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build patched FFmpeg (ios + isimulator)
+      - name: Build patched FFmpeg (ios + isimulator + macos)
         run: |
           set -e
           swift --version
-          swift package --disable-sandbox BuildFFmpeg platforms=ios,isimulator enable-FFmpeg 2>&1 | tail -80
+          # macos is REQUIRED: SPM compiles the FFmpegKit umbrella module for the
+          # macOS HOST even when the final target is the iOS simulator, so the
+          # Libav* xcframeworks must keep a macos slice or `#import
+          # <Libavformat/avformat.h>` fails with "file not found".
+          swift package --disable-sandbox BuildFFmpeg platforms=ios,isimulator,macos enable-FFmpeg 2>&1 | tail -80
 
       - name: Verify patch landed in source + binary
         run: |
