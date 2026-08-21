@@ -1,6 +1,9 @@
 name: diag-sim-module
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - diag-module
 
 jobs:
   build:
