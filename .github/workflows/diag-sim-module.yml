@@ -1,0 +1,36 @@
+name: diag-sim-module
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce simulator module failure with full verbose output
+        run: |
+          set -e
+          mkdir -p Diag/Sources/Diag
+          cd Diag
+          cat > Package.swift <<'EOF'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "Diag",
+              platforms: [.iOS(.v13), .macOS(.v10_15)],
+              targets: [.target(name: "Diag", dependencies: [
+                  .product(name: "FFmpegKit", package: "FFmpegKit"),
+                  .product(name: "Libavformat", package: "FFmpegKit"),
+              ])]
+          )
+          package.dependencies += [.package(path: "..")]
+          EOF
+          echo 'import FFmpegKit' > Sources/Diag/diag.swift
+          echo 'import Libavformat' >> Sources/Diag/diag.swift
+          echo 'public func diagOK() -> Int32 { return LIBAVFORMAT_VERSION_MAJOR }' >> Sources/Diag/diag.swift
+          SDK=$(xcrun -sdk iphonesimulator -show-sdk-path)
+          echo "SDK=$SDK"
+          swift build --sdk "$SDK" -Xswiftc -target -Xswiftc arm64-apple-ios26.0-simulator -v 2>&1 | tee /tmp/diag.log | tail -60
+          echo "=== exit: $? ==="
+          echo "=== full log (last 200 lines) ==="
+          tail -200 /tmp/diag.log
