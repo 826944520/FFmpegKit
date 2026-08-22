@@ -1,0 +1,123 @@
+diff --git a/libavformat/cache.c b/libavformat/cache.c
+index 115c2c2..a285c84 100644
+--- a/libavformat/cache.c
++++ b/libavformat/cache.c
+@@ -29,6 +29,7 @@
+ 
+ #include "libavutil/avassert.h"
+ #include "libavutil/avstring.h"
++#include "libavutil/error.h"
+ #include "libavutil/file_open.h"
+ #include "libavutil/opt.h"
+ #include "libavutil/tree.h"
+@@ -55,6 +56,7 @@ typedef struct Context {
+     AVClass *class;
+     int fd;
+     char *filename;
++    char *cache_file;
+     struct AVTreeNode *root;
+     int64_t logical_pos;
+     int64_t cache_pos;
+@@ -74,26 +76,72 @@ static int cmp(const void *key, const void *node)
+ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **options)
+ {
+     int ret;
+-    char *buffername;
++    char *buffername = NULL;
+     Context *c= h->priv_data;
+ 
+     av_strstart(arg, "cache:", &arg);
+ 
+-    c->fd = avpriv_tempfile("ffcache", &buffername, 0, h);
+-    if (c->fd < 0){
+-        av_log(h, AV_LOG_ERROR, "Failed to create tempfile\n");
+-        return c->fd;
+-    }
++    if (c->cache_file && c->cache_file[0]) {
++        /* Persistent play-while-cache: reuse the file across sessions. */
++        c->fd = avpriv_open(c->cache_file, O_RDWR | O_CREAT, 0600);
++        if (c->fd < 0) {
++            av_log(h, AV_LOG_ERROR, "Failed to open cache file %s: %s\n",
++                   c->cache_file, av_err2str(AVERROR(errno)));
++            return AVERROR(errno);
++        }
++        /* filename stays NULL: cache_close must NOT unlink the persistent file. */
++        ret = 0;
++        /* Adopt already-downloaded bytes as a cached range so a previous
++         * session resumes (seek-back hits disk, download continues from there). */
++        int64_t existing = lseek(c->fd, 0, SEEK_END);
++        if (existing > 0) {
++            CacheEntry *entry = av_malloc(sizeof(*entry));
++            struct AVTreeNode *node = av_tree_node_alloc();
++            if (entry && node) {
++                entry->logical_pos = 0;
++                entry->physical_pos = 0;
++                entry->size = existing;
++                if (av_tree_insert(&c->root, entry, cmp, &node) != entry)
++                    av_free(entry);
++                c->cache_pos = existing;
++                c->end = existing;
++            } else {
++                av_free(entry);
++                av_free(node);
++            }
++        }
++    } else {
++        c->fd = avpriv_tempfile("ffcache", &buffername, 0, h);
++        if (c->fd < 0){
++            av_log(h, AV_LOG_ERROR, "Failed to create tempfile\n");
++            return c->fd;
++        }
+ 
+-    ret = unlink(buffername);
++        ret = unlink(buffername);
+ 
+-    if (ret >= 0)
+-        av_freep(&buffername);
+-    else
+-        c->filename = buffername;
++        if (ret >= 0)
++            av_freep(&buffername);
++        else
++            c->filename = buffername;
++    }
+ 
+-    return ffurl_open_whitelist(&c->inner, arg, flags, &h->interrupt_callback,
+-                                options, h->protocol_whitelist, h->protocol_blacklist, h);
++    ret = ffurl_open_whitelist(&c->inner, arg, flags, &h->interrupt_callback,
++                               options, h->protocol_whitelist, h->protocol_blacklist, h);
++    if (ret < 0)
++        return ret;
++
++    /* Resume: position the inner stream at the end of the existing cache so
++     * the next cache miss continues downloading from there. */
++    if (c->cache_file && c->cache_file[0] && c->end > 0) {
++        int64_t r = ffurl_seek(c->inner, c->end, SEEK_SET);
++        if (r < 0) {
++            av_log(h, AV_LOG_ERROR, "Failed to seek inner to resume position %"PRId64"\n", c->end);
++        } else {
++            c->inner_pos = r;
++        }
++    }
++
++    return 0;
+ }
+ 
+ static int add_entry(URLContext *h, const unsigned char *buf, int size)
+@@ -305,6 +353,8 @@ static int cache_close(URLContext *h)
+ 
+     close(c->fd);
+     if (c->filename) {
++        /* only the anonymous temp branch sets filename; persistent cache
++         * files are kept for the next session (play-while-cache). */
+         ret = unlink(c->filename);
+         if (ret < 0)
+             av_log(h, AV_LOG_ERROR, "Could not delete %s.\n", c->filename);
+@@ -322,6 +372,7 @@ static int cache_close(URLContext *h)
+ 
+ static const AVOption options[] = {
+     { "read_ahead_limit", "Amount in bytes that may be read ahead when seeking isn't supported, -1 for unlimited", OFFSET(read_ahead_limit), AV_OPT_TYPE_INT, { .i64 = 65536 }, -1, INT_MAX, D },
++    { "cache_file", "persistent cache file path (play-while-cache)", OFFSET(cache_file), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D },
+     {NULL},
+ };
+ 
